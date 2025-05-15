@@ -130,6 +130,13 @@ resource "aws_iam_role" "authenticated_role" {
             "cognito-identity.amazonaws.com:amr" = "authenticated"
           }
         }
+      },
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
       }
     ]
   })
@@ -145,10 +152,7 @@ resource "aws_iam_role_policy" "dynamo_access_policy" {
       {
         Effect = "Allow",
         Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem"
+          "dynamodb:*"
         ],
         Resource = aws_dynamodb_table.todo_table.arn,
         Condition = {
@@ -221,7 +225,7 @@ resource "aws_api_gateway_integration" "post_todo_integration" {
   "TableName": "${aws_dynamodb_table.todo_table.name}",
   "Item": {
     "userId": {
-      "S": "$context.identity.cognitoIdentityId"
+      "S": "$context.authorizer.claims.sub"
     },
     "todoId": {
       "S": "$input.path('$.todoId')"
@@ -391,6 +395,11 @@ resource "aws_api_gateway_method_response" "options_todo_200" {
   depends_on = [aws_api_gateway_integration.options_todo_integration]
 }
 
+resource "aws_cloudwatch_log_group" "api_gw_logs" {
+  name              = "/aws/apigateway/todo-api-execution"
+  retention_in_days = 1
+}
+
 resource "aws_api_gateway_deployment" "todo_deployment" {
   depends_on = [
     aws_api_gateway_integration.post_todo_integration,
@@ -412,6 +421,88 @@ resource "aws_api_gateway_stage" "todo_stage" {
   deployment_id = aws_api_gateway_deployment.todo_deployment.id
   rest_api_id   = aws_api_gateway_rest_api.todo_api.id
   stage_name    = "prod"
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gw_logs.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      caller         = "$context.identity.caller"
+      user           = "$context.identity.user"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      resourcePath   = "$context.resourcePath"
+      status         = "$context.status"
+      protocol       = "$context.protocol"
+      responseLength = "$context.responseLength"
+    })
+  }
+
+  xray_tracing_enabled  = false
+  cache_cluster_enabled = false
+  description           = "Prod stage for Todo API"
+  variables             = {}
+  documentation_version = null
+}
+
+# Enable execution logging
+resource "aws_api_gateway_method_settings" "todo_stage_settings" {
+  rest_api_id = aws_api_gateway_rest_api.todo_api.id
+  stage_name  = aws_api_gateway_stage.todo_stage.stage_name
+
+  method_path = "*/*"
+
+  settings {
+    logging_level      = "INFO"
+    data_trace_enabled = true
+    metrics_enabled    = true
+  }
+}
+
+# ------------------
+# IAM Role for API Gateway CloudWatch Logs
+# ------------------
+resource "aws_iam_role" "apigw_cloudwatch_role" {
+  name = "APIGatewayCloudWatchLogsRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = {
+        Service = "apigateway.amazonaws.com"
+      },
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "apigw_cloudwatch_policy" {
+  name = "APIGatewayCloudWatchLogsPolicy"
+  role = aws_iam_role.apigw_cloudwatch_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+          "logs:PutLogEvents",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_api_gateway_account" "account" {
+  cloudwatch_role_arn = aws_iam_role.apigw_cloudwatch_role.arn
 }
 
 # ------------------
