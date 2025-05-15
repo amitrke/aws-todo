@@ -102,10 +102,9 @@ resource "aws_cognito_identity_pool" "identity_pool" {
     provider_name = "cognito-idp.${local.region}.amazonaws.com/${aws_cognito_user_pool.user_pool.id}"
   }
 
-  # Remove supported_login_providers if federating Google through User Pool
-  # supported_login_providers = {
-  #   "accounts.google.com" = local.secrets["google_client_id"]
-  # }
+  supported_login_providers = {
+    "accounts.google.com" = local.secrets["google_client_id"]
+  }
 }
 
 # ------------------
@@ -124,20 +123,10 @@ resource "aws_iam_role" "authenticated_role" {
         },
         Action = "sts:AssumeRoleWithWebIdentity",
         Condition = {
-          StringEquals = {
+          "StringEquals" = {
             "cognito-identity.amazonaws.com:aud" = aws_cognito_identity_pool.identity_pool.id
-          },
-          "ForAnyValue:StringLike" = {
-            "cognito-identity.amazonaws.com:amr" = "authenticated"
           }
         }
-      },
-      {
-        Effect = "Allow",
-        Principal = {
-          Service = "apigateway.amazonaws.com"
-        },
-        Action = "sts:AssumeRole"
       }
     ]
   })
