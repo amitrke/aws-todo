@@ -127,6 +127,13 @@ resource "aws_iam_role" "authenticated_role" {
             "cognito-identity.amazonaws.com:aud" = aws_cognito_identity_pool.identity_pool.id
           }
         }
+      },
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
       }
     ]
   })
