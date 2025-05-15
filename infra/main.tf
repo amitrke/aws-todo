@@ -19,17 +19,17 @@ data "aws_secretsmanager_secret_version" "app" {
 
 locals {
   secrets = jsondecode(data.aws_secretsmanager_secret_version.app.secret_string)
-  region = data.aws_region.current.name
+  region  = data.aws_region.current.name
 }
 
 # ------------------
 # DynamoDB Table
 # ------------------
 resource "aws_dynamodb_table" "todo_table" {
-  name           = "TodoTable"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "userId"
-  range_key      = "todoId"
+  name         = "TodoTable"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "userId"
+  range_key    = "todoId"
 
   attribute {
     name = "userId"
@@ -53,12 +53,12 @@ resource "aws_cognito_user_pool" "user_pool" {
 # Google IdP
 # ------------------
 resource "aws_cognito_identity_provider" "google" {
-  user_pool_id = aws_cognito_user_pool.user_pool.id
+  user_pool_id  = aws_cognito_user_pool.user_pool.id
   provider_name = "Google"
   provider_type = "Google"
   provider_details = {
-    client_id     = local.secrets["google_client_id"]
-    client_secret = local.secrets["google_client_secret"]
+    client_id        = local.secrets["google_client_id"]
+    client_secret    = local.secrets["google_client_secret"]
     authorize_scopes = "openid email profile"
   }
   attribute_mapping = {
@@ -67,16 +67,22 @@ resource "aws_cognito_identity_provider" "google" {
 
 }
 
-resource "aws_cognito_user_pool_client" "user_pool_client" {
-  name         = "todo-client"
+# User pool domain
+resource "aws_cognito_user_pool_domain" "user_pool_domain" {
+  domain       = "amrke-myapp"
   user_pool_id = aws_cognito_user_pool.user_pool.id
-  generate_secret = false
-  allowed_oauth_flows = ["code"]
+}
+
+resource "aws_cognito_user_pool_client" "user_pool_client" {
+  name                                 = "todo-client"
+  user_pool_id                         = aws_cognito_user_pool.user_pool.id
+  generate_secret                      = false
+  allowed_oauth_flows                  = ["code"]
   allowed_oauth_flows_user_pool_client = true
-  supported_identity_providers = ["Google"]
-  callback_urls = ["http://localhost:3000"]
-  logout_urls   = ["http://localhost:3000"]
-  allowed_oauth_scopes = ["openid", "email", "profile"]
+  supported_identity_providers         = ["Google"]
+  callback_urls                        = ["http://localhost:3000"]
+  logout_urls                          = ["http://localhost:3000"]
+  allowed_oauth_scopes                 = ["openid", "email", "profile"]
 
   depends_on = [
     aws_cognito_identity_provider.google
@@ -89,9 +95,14 @@ resource "aws_cognito_user_pool_client" "user_pool_client" {
 resource "aws_cognito_identity_pool" "identity_pool" {
   identity_pool_name               = "todo-identity-pool"
   allow_unauthenticated_identities = false
+
   cognito_identity_providers {
-    client_id = aws_cognito_user_pool_client.user_pool_client.id
-    provider_name = aws_cognito_user_pool.user_pool.endpoint
+    client_id     = aws_cognito_user_pool_client.user_pool_client.id
+    provider_name = "cognito-idp.${local.region}.amazonaws.com/${aws_cognito_user_pool.user_pool.id}"
+  }
+
+  supported_login_providers = {
+    "accounts.google.com" = local.secrets["google_client_id"]
   }
 }
 
@@ -188,13 +199,13 @@ resource "aws_api_gateway_method" "post_todo" {
 }
 
 resource "aws_api_gateway_integration" "post_todo_integration" {
-  rest_api_id = aws_api_gateway_rest_api.todo_api.id
-  resource_id = aws_api_gateway_resource.todo_resource.id
-  http_method = aws_api_gateway_method.post_todo.http_method
-  type        = "AWS"
-  credentials = aws_iam_role.authenticated_role.arn
+  rest_api_id             = aws_api_gateway_rest_api.todo_api.id
+  resource_id             = aws_api_gateway_resource.todo_resource.id
+  http_method             = aws_api_gateway_method.post_todo.http_method
+  type                    = "AWS"
+  credentials             = aws_iam_role.authenticated_role.arn
   integration_http_method = "POST"
-  uri         = "arn:aws:apigateway:${local.region}:dynamodb:action/PutItem"
+  uri                     = "arn:aws:apigateway:${local.region}:dynamodb:action/PutItem"
 
   request_templates = {
     "application/json" = <<EOF
@@ -252,10 +263,10 @@ resource "aws_api_gateway_integration_response" "post_todo_200" {
 }
 
 resource "aws_api_gateway_integration_response" "post_todo_400" {
-  rest_api_id = aws_api_gateway_rest_api.todo_api.id
-  resource_id = aws_api_gateway_resource.todo_resource.id
-  http_method = aws_api_gateway_method.post_todo.http_method
-  status_code = "400"
+  rest_api_id       = aws_api_gateway_rest_api.todo_api.id
+  resource_id       = aws_api_gateway_resource.todo_resource.id
+  http_method       = aws_api_gateway_method.post_todo.http_method
+  status_code       = "400"
   selection_pattern = "^4\\d{2}.*"
   response_templates = {
     "application/json" = "{ \"error\": \"Bad Request\" }"
@@ -284,10 +295,10 @@ resource "aws_api_gateway_method_response" "post_todo_400" {
 }
 
 resource "aws_api_gateway_integration_response" "post_todo_500" {
-  rest_api_id = aws_api_gateway_rest_api.todo_api.id
-  resource_id = aws_api_gateway_resource.todo_resource.id
-  http_method = aws_api_gateway_method.post_todo.http_method
-  status_code = "500"
+  rest_api_id       = aws_api_gateway_rest_api.todo_api.id
+  resource_id       = aws_api_gateway_resource.todo_resource.id
+  http_method       = aws_api_gateway_method.post_todo.http_method
+  status_code       = "500"
   selection_pattern = "^5\\d{2}.*"
   response_templates = {
     "application/json" = "{ \"error\": \"Internal Server Error\" }"
@@ -344,7 +355,7 @@ resource "aws_api_gateway_integration_response" "options_todo_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
     "method.response.header.Access-Control-Allow-Methods" = "'OPTIONS,POST'",
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 
   depends_on = [
@@ -388,4 +399,28 @@ resource "aws_api_gateway_stage" "todo_stage" {
   deployment_id = aws_api_gateway_deployment.todo_deployment.id
   rest_api_id   = aws_api_gateway_rest_api.todo_api.id
   stage_name    = "prod"
+}
+
+# ------------------
+# Outputs
+# ------------------
+output "api_url" {
+  value = "https://${aws_api_gateway_rest_api.todo_api.id}.execute-api.${local.region}.amazonaws.com/${aws_api_gateway_stage.todo_stage.stage_name}/todo"
+}
+
+output "user_pool_id" {
+  value = aws_cognito_user_pool.user_pool.id
+}
+
+output "identity_pool_id" {
+  value = aws_cognito_identity_pool.identity_pool.id
+}
+
+output "user_pool_client_id" {
+  value = aws_cognito_user_pool_client.user_pool_client.id
+}
+
+# User pool domain URL
+output "user_pool_domain" {
+  value = "${aws_cognito_user_pool_domain.user_pool_domain.domain}.auth.${local.region}.amazoncognito.com"
 }
