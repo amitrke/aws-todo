@@ -6,7 +6,6 @@ provider "aws" {
   region = "us-east-1"
 }
 
-
 data "aws_region" "current" {}
 
 data "aws_secretsmanager_secret" "app" {
@@ -155,6 +154,13 @@ resource "aws_iam_role_policy" "dynamo_access_policy" {
             "dynamodb:LeadingKeys" = ["$${cognito-identity.amazonaws.com:sub}"]
           }
         }
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "execute-api:Invoke"
+        ],
+        Resource = "arn:aws:execute-api:${local.region}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.todo_api.id}/*"
       }
     ]
   })
@@ -353,7 +359,7 @@ resource "aws_api_gateway_integration_response" "options_todo_200" {
     "application/json" = ""
   }
   response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-amz-content-sha256'",
     "method.response.header.Access-Control-Allow-Methods" = "'OPTIONS,POST'",
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
@@ -392,6 +398,11 @@ resource "aws_api_gateway_deployment" "todo_deployment" {
   rest_api_id = aws_api_gateway_rest_api.todo_api.id
   lifecycle {
     create_before_destroy = true
+  }
+
+  triggers = {
+    #redeploy = sha1(jsonencode(aws_api_gateway_rest_api.todo_api))
+    redeployment = timestamp()
   }
 }
 
