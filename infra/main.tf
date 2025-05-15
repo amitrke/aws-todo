@@ -49,18 +49,6 @@ resource "aws_cognito_user_pool" "user_pool" {
   name = "todo-user-pool"
 }
 
-resource "aws_cognito_user_pool_client" "user_pool_client" {
-  name         = "todo-client"
-  user_pool_id = aws_cognito_user_pool.user_pool.id
-  generate_secret = false
-  allowed_oauth_flows = ["code"]
-  allowed_oauth_flows_user_pool_client = true
-  supported_identity_providers = ["Google"]
-  callback_urls = ["http://localhost:3000"]
-  logout_urls   = ["http://localhost:3000"]
-  allowed_oauth_scopes = ["openid", "email", "profile"]
-}
-
 # ------------------
 # Google IdP
 # ------------------
@@ -77,6 +65,22 @@ resource "aws_cognito_identity_provider" "google" {
     email = "email"
   }
 
+}
+
+resource "aws_cognito_user_pool_client" "user_pool_client" {
+  name         = "todo-client"
+  user_pool_id = aws_cognito_user_pool.user_pool.id
+  generate_secret = false
+  allowed_oauth_flows = ["code"]
+  allowed_oauth_flows_user_pool_client = true
+  supported_identity_providers = ["Google"]
+  callback_urls = ["http://localhost:3000"]
+  logout_urls   = ["http://localhost:3000"]
+  allowed_oauth_scopes = ["openid", "email", "profile"]
+
+  depends_on = [
+    aws_cognito_identity_provider.google
+  ]
 }
 
 # ------------------
@@ -241,7 +245,10 @@ resource "aws_api_gateway_integration_response" "post_todo_200" {
     "method.response.header.Access-Control-Allow-Origin" = "'*'"
   }
 
-  depends_on = [aws_api_gateway_integration.post_todo_integration]
+  depends_on = [
+    aws_api_gateway_integration.post_todo_integration,
+    aws_api_gateway_method_response.post_todo_200
+  ]
 }
 
 resource "aws_api_gateway_integration_response" "post_todo_400" {
@@ -257,7 +264,23 @@ resource "aws_api_gateway_integration_response" "post_todo_400" {
     "method.response.header.Access-Control-Allow-Origin" = "'*'"
   }
 
-  depends_on = [aws_api_gateway_integration.post_todo_integration]
+  depends_on = [
+    aws_api_gateway_integration.post_todo_integration,
+    aws_api_gateway_method_response.post_todo_400
+  ]
+}
+
+resource "aws_api_gateway_method_response" "post_todo_400" {
+  rest_api_id = aws_api_gateway_rest_api.todo_api.id
+  resource_id = aws_api_gateway_resource.todo_resource.id
+  http_method = aws_api_gateway_method.post_todo.http_method
+  status_code = "400"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+  response_models = {
+    "application/json" = "Empty"
+  }
 }
 
 resource "aws_api_gateway_integration_response" "post_todo_500" {
@@ -272,7 +295,23 @@ resource "aws_api_gateway_integration_response" "post_todo_500" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Origin" = "'*'"
   }
-  depends_on = [aws_api_gateway_integration.post_todo_integration]
+  depends_on = [
+    aws_api_gateway_integration.post_todo_integration,
+    aws_api_gateway_method_response.post_todo_500
+  ]
+}
+
+resource "aws_api_gateway_method_response" "post_todo_500" {
+  rest_api_id = aws_api_gateway_rest_api.todo_api.id
+  resource_id = aws_api_gateway_resource.todo_resource.id
+  http_method = aws_api_gateway_method.post_todo.http_method
+  status_code = "500"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+  response_models = {
+    "application/json" = "Empty"
+  }
 }
 
 # OPTIONS method and integration...
@@ -308,7 +347,10 @@ resource "aws_api_gateway_integration_response" "options_todo_200" {
     "method.response.header.Access-Control-Allow-Origin" = "'*'"
   }
 
-  depends_on = [aws_api_gateway_integration.options_todo_integration]
+  depends_on = [
+    aws_api_gateway_integration.options_todo_integration,
+    aws_api_gateway_method_response.options_todo_200
+  ]
 }
 
 resource "aws_api_gateway_method_response" "options_todo_200" {
