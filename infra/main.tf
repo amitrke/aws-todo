@@ -102,9 +102,10 @@ resource "aws_cognito_identity_pool" "identity_pool" {
     provider_name = "cognito-idp.${local.region}.amazonaws.com/${aws_cognito_user_pool.user_pool.id}"
   }
 
-  supported_login_providers = {
-    "accounts.google.com" = local.secrets["google_client_id"]
-  }
+  # Remove supported_login_providers if federating Google through User Pool
+  # supported_login_providers = {
+  #   "accounts.google.com" = local.secrets["google_client_id"]
+  # }
 }
 
 # ------------------
@@ -157,7 +158,7 @@ resource "aws_iam_role_policy" "dynamo_access_policy" {
         Resource = aws_dynamodb_table.todo_table.arn,
         Condition = {
           "ForAllValues:StringEquals" = {
-            "dynamodb:LeadingKeys" = ["$${cognito-identity.amazonaws.com:sub}"]
+            "dynamodb:LeadingKeys" = ["$${cognito-identity.amazonaws.com:identity-id}"]
           }
         }
       },
@@ -225,7 +226,7 @@ resource "aws_api_gateway_integration" "post_todo_integration" {
   "TableName": "${aws_dynamodb_table.todo_table.name}",
   "Item": {
     "userId": {
-      "S": "$context.authorizer.claims.sub"
+      "S": "$context.identity.cognitoIdentityId"
     },
     "todoId": {
       "S": "$input.path('$.todoId')"
