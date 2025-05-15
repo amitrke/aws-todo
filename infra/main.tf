@@ -218,6 +218,13 @@ resource "aws_api_gateway_integration" "post_todo_integration" {
 
   request_templates = {
     "application/json" = <<EOF
+#set($inputRoot = $input.path('$'))
+#set($logMap = {
+  "userId": "$context.identity.cognitoIdentityId",
+  "todoId": "$input.path('$.todoId')",
+  "content": "$input.path('$.content')"
+})
+$util.log("DynamoDB PutItem request: $logMap")
 {
   "TableName": "${aws_dynamodb_table.todo_table.name}",
   "Item": {
@@ -423,6 +430,7 @@ resource "aws_api_gateway_stage" "todo_stage" {
     destination_arn = aws_cloudwatch_log_group.api_gw_logs.arn
     format = jsonencode({
       requestId      = "$context.requestId"
+      identityId     = "$context.identity.cognitoIdentityId"
       ip             = "$context.identity.sourceIp"
       caller         = "$context.identity.caller"
       user           = "$context.identity.user"

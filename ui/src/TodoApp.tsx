@@ -19,10 +19,10 @@ type Credentials = {
 const config = {
   region: "us-east-1",
   userPoolDomain: "https://amrke-myapp.auth.us-east-1.amazoncognito.com",
-  userPoolClientId: "42cpjdr1b9o6nog0qaskibl8su",
-  userPoolId: "us-east-1_4MG4jfWWJ",
-  identityPoolId: "us-east-1:ed18857d-64ac-4dca-a259-fb02d4cb4937",
-  apiEndpoint: "https://6y9j4glqub.execute-api.us-east-1.amazonaws.com/prod/todo",
+  userPoolClientId: "7hhnoqsa1n6m4f6c5g5iat844f",
+  userPoolId: "us-east-1_udPTILGXc",
+  identityPoolId: "us-east-1:e23ff60b-aaed-415a-95f9-e0a30528866b",
+  apiEndpoint: "https://hgme670fp1.execute-api.us-east-1.amazonaws.com/prod/todo",
   googleClientId: "665813907165-ag9scpreoqoq3krqt12q1e4lh2vb4f2l.apps.googleusercontent.com" // <-- Replace with your Google client ID
 };
 
