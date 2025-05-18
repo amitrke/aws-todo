@@ -1,12 +1,8 @@
-import React, { useEffect, useState, ChangeEvent } from "react";
-import {
-  fromCognitoIdentityPool
-} from "@aws-sdk/credential-providers";
-import { SignatureV4 } from "@aws-sdk/signature-v4";
-import { FetchHttpHandler } from "@aws-sdk/fetch-http-handler";
-import { Sha256 } from "@aws-crypto/sha256-js";
+import React, { useState, ChangeEvent } from "react";
+import { fromCognitoIdentityPool } from "@aws-sdk/credential-providers";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { v4 as uuidv4 } from "uuid";
-import { HttpRequest } from "@smithy/protocol-http";
 import { GoogleOAuthProvider, GoogleLogin, CredentialResponse } from "@react-oauth/google";
 
 type Credentials = {
@@ -14,21 +10,20 @@ type Credentials = {
   secretAccessKey: string;
   sessionToken: string;
   idToken: string;
+  cognitoIdentityId: string;
 };
 
 const config = {
   region: "us-east-1",
-  userPoolDomain: "https://amrke-myapp.auth.us-east-1.amazoncognito.com",
-  userPoolClientId: "7hhnoqsa1n6m4f6c5g5iat844f",
-  userPoolId: "us-east-1_udPTILGXc",
-  identityPoolId: "us-east-1:e23ff60b-aaed-415a-95f9-e0a30528866b",
-  apiEndpoint: "https://hgme670fp1.execute-api.us-east-1.amazonaws.com/prod/todo",
-  googleClientId: "665813907165-ag9scpreoqoq3krqt12q1e4lh2vb4f2l.apps.googleusercontent.com" // <-- Replace with your Google client ID
+  identityPoolId: "us-east-1:a991f7f5-859e-41c7-b4fc-cf5f527886f8",
+  tableName: "TodoTable", // Your DynamoDB table name
+  googleClientId: "665813907165-ag9scpreoqoq3krqt12q1e4lh2vb4f2l.apps.googleusercontent.com"
 };
 
 export default function TodoApp() {
   const [creds, setCreds] = useState<Credentials | null>(null);
   const [todo, setTodo] = useState<string>("");
+  const [dynamoClient, setDynamoClient] = useState<DynamoDBDocumentClient | null>(null);
 
   // Handle Google login success
   const handleGoogleLogin = async (credentialResponse: CredentialResponse) => {
@@ -50,49 +45,63 @@ export default function TodoApp() {
     });
 
     const awsCreds = await credentialProvider();
+
+    // Get User Identity ID
+    const identityId = awsCreds.identityId;
+    console.log("Identity ID:", identityId); // Log it to verify
+    if (!awsCreds) {
+      alert("Failed to get AWS credentials");
+      return;
+    }
+
+    // Set up DynamoDB client
+    const client = new DynamoDBClient({
+      region: config.region,
+      credentials: awsCreds
+    });
+    
+    const docClient = DynamoDBDocumentClient.from(client);
+    setDynamoClient(docClient);
+
     setCreds({
       accessKeyId: awsCreds.accessKeyId,
       secretAccessKey: awsCreds.secretAccessKey,
       sessionToken: awsCreds.sessionToken ?? "",
-      idToken: googleIdToken
+      idToken: googleIdToken,
+      cognitoIdentityId: identityId ?? "",
     });
   };
 
   const submitTodo = async () => {
-    if (!creds) return;
+    if (!dynamoClient) return;
     if (!todo.trim()) {
       alert("Todo cannot be empty");
       return;
     }
+    
     try {
       const todoId = uuidv4();
-      const request = new HttpRequest({
-        method: "POST",
-        protocol: "https:",
-        hostname: config.apiEndpoint.replace("https://", "").split("/")[0],
-        path: "/prod/todo",
-        headers: {
-          "Content-Type": "application/json",
-          host: config.apiEndpoint.replace("https://", "").split("/")[0],
-        },
-        body: JSON.stringify({ todoId, content: todo }),
+      
+      // Get the identity ID - this is important for per-user isolation
+      const identityId = creds?.cognitoIdentityId
+      
+      // Create a PutCommand to add an item to DynamoDB
+      const command = new PutCommand({
+        TableName: config.tableName,
+        Item: {
+          userId: identityId,
+          todoId: todoId,
+          content: todo
+        }
       });
 
-      const signer = new SignatureV4({
-        credentials: creds,
-        service: "execute-api",
-        region: config.region,
-        sha256: Sha256,
-      });
-
-      const signedRequest = await signer.sign(request);
-
-      const handler = new FetchHttpHandler();
-      const { response } = await handler.handle(signedRequest as any);
-      const responseBody = await new Response(response.body).text();
-      alert("Response: " + responseBody);
+      // Send the command to DynamoDB
+      const result = await dynamoClient.send(command);
+      alert("Todo added successfully!");
+      setTodo("");
     } catch (err) {
       alert("Error: " + (err as Error).message);
+      console.error(err);
     }
   };
 

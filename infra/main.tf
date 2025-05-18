@@ -44,63 +44,11 @@ resource "aws_dynamodb_table" "todo_table" {
 }
 
 # ------------------
-# Cognito User Pool
-# ------------------
-resource "aws_cognito_user_pool" "user_pool" {
-  name = "todo-user-pool"
-}
-
-# ------------------
-# Google IdP
-# ------------------
-resource "aws_cognito_identity_provider" "google" {
-  user_pool_id  = aws_cognito_user_pool.user_pool.id
-  provider_name = "Google"
-  provider_type = "Google"
-  provider_details = {
-    client_id        = local.secrets["google_client_id"]
-    client_secret    = local.secrets["google_client_secret"]
-    authorize_scopes = "openid email profile"
-  }
-  attribute_mapping = {
-    email = "email"
-  }
-
-}
-
-# User pool domain
-resource "aws_cognito_user_pool_domain" "user_pool_domain" {
-  domain       = "amrke-myapp"
-  user_pool_id = aws_cognito_user_pool.user_pool.id
-}
-
-resource "aws_cognito_user_pool_client" "user_pool_client" {
-  name                                 = "todo-client"
-  user_pool_id                         = aws_cognito_user_pool.user_pool.id
-  generate_secret                      = false
-  allowed_oauth_flows                  = ["code"]
-  allowed_oauth_flows_user_pool_client = true
-  supported_identity_providers         = ["Google"]
-  callback_urls                        = ["http://localhost:3000"]
-  logout_urls                          = ["http://localhost:3000"]
-  allowed_oauth_scopes                 = ["openid", "email", "profile"]
-
-  depends_on = [
-    aws_cognito_identity_provider.google
-  ]
-}
-
-# ------------------
 # Cognito Identity Pool
 # ------------------
 resource "aws_cognito_identity_pool" "identity_pool" {
   identity_pool_name               = "todo-identity-pool"
   allow_unauthenticated_identities = false
-
-  cognito_identity_providers {
-    client_id     = aws_cognito_user_pool_client.user_pool_client.id
-    provider_name = "cognito-idp.${local.region}.amazonaws.com/${aws_cognito_user_pool.user_pool.id}"
-  }
 
   supported_login_providers = {
     "accounts.google.com" = local.secrets["google_client_id"]
@@ -149,12 +97,19 @@ resource "aws_iam_role_policy" "dynamo_access_policy" {
       {
         Effect = "Allow",
         Action = [
-          "dynamodb:*"
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
         ],
         Resource = aws_dynamodb_table.todo_table.arn,
         Condition = {
           "ForAllValues:StringEquals" = {
-            "dynamodb:LeadingKeys" = ["$${cognito-identity.amazonaws.com:identity-id}"]
+            "dynamodb:LeadingKeys" = [
+              "$${cognito-identity.amazonaws.com:sub}"
+            ]
           }
         }
       },
@@ -184,7 +139,6 @@ resource "aws_api_gateway_rest_api" "todo_api" {
   description = "API for Todo App using direct integration with DynamoDB"
 
   depends_on = [
-    aws_cognito_user_pool_client.user_pool_client,
     aws_cognito_identity_pool.identity_pool,
     aws_iam_role.authenticated_role
   ]
@@ -517,19 +471,6 @@ output "api_url" {
   value = "https://${aws_api_gateway_rest_api.todo_api.id}.execute-api.${local.region}.amazonaws.com/${aws_api_gateway_stage.todo_stage.stage_name}/todo"
 }
 
-output "user_pool_id" {
-  value = aws_cognito_user_pool.user_pool.id
-}
-
 output "identity_pool_id" {
   value = aws_cognito_identity_pool.identity_pool.id
-}
-
-output "user_pool_client_id" {
-  value = aws_cognito_user_pool_client.user_pool_client.id
-}
-
-# User pool domain URL
-output "user_pool_domain" {
-  value = "${aws_cognito_user_pool_domain.user_pool_domain.domain}.auth.${local.region}.amazoncognito.com"
 }
