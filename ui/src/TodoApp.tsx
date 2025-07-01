@@ -1,7 +1,7 @@
-import React, { useState, ChangeEvent } from "react";
+import React, { useState, ChangeEvent, useEffect } from "react";
 import { fromCognitoIdentityPool } from "@aws-sdk/credential-providers";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { v4 as uuidv4 } from "uuid";
 import { GoogleOAuthProvider, GoogleLogin, CredentialResponse } from "@react-oauth/google";
 
@@ -11,6 +11,12 @@ type Credentials = {
   sessionToken: string;
   idToken: string;
   cognitoIdentityId: string;
+};
+
+type TodoItem = {
+  todoId: string;
+  content: string;
+  completed: boolean;
 };
 
 const config = {
@@ -23,7 +29,14 @@ const config = {
 export default function TodoApp() {
   const [creds, setCreds] = useState<Credentials | null>(null);
   const [todo, setTodo] = useState<string>("");
+  const [todos, setTodos] = useState<TodoItem[]>([]);
   const [dynamoClient, setDynamoClient] = useState<DynamoDBDocumentClient | null>(null);
+
+  useEffect(() => {
+    if (dynamoClient) {
+      fetchTodos();
+    }
+  }, [dynamoClient]);
 
   // Handle Google login success
   const handleGoogleLogin = async (credentialResponse: CredentialResponse) => {
@@ -72,6 +85,55 @@ export default function TodoApp() {
     });
   };
 
+  const fetchTodos = async () => {
+    if (!dynamoClient || !creds) return;
+
+    const command = new QueryCommand({
+      TableName: config.tableName,
+      KeyConditionExpression: "userId = :userId",
+      ExpressionAttributeValues: {
+        ":userId": creds.cognitoIdentityId,
+      },
+    });
+
+    try {
+      const { Items } = await dynamoClient.send(command);
+      setTodos(Items as TodoItem[]);
+    } catch (err) {
+      console.error("Error fetching todos:", err);
+      alert("Error fetching todos.");
+    }
+  };
+
+  const handleToggleComplete = async (todoId: string, currentStatus: boolean) => {
+    if (!dynamoClient || !creds) return;
+
+    const command = new UpdateCommand({
+      TableName: config.tableName,
+      Key: {
+        userId: creds.cognitoIdentityId,
+        todoId: todoId,
+      },
+      UpdateExpression: "set completed = :completed",
+      ExpressionAttributeValues: {
+        ":completed": !currentStatus,
+      },
+      ReturnValues: "UPDATED_NEW",
+    });
+
+    try {
+      await dynamoClient.send(command);
+      setTodos(
+        todos.map((item) =>
+          item.todoId === todoId ? { ...item, completed: !currentStatus } : item
+        )
+      );
+    } catch (err) {
+      console.error("Error updating todo:", err);
+      alert("Error updating todo.");
+    }
+  };
+
   const submitTodo = async () => {
     if (!dynamoClient) return;
     if (!todo.trim()) {
@@ -91,14 +153,16 @@ export default function TodoApp() {
         Item: {
           userId: identityId,
           todoId: todoId,
-          content: todo
+          content: todo,
+          completed: false
         }
       });
 
       // Send the command to DynamoDB
-      const result = await dynamoClient.send(command);
+      await dynamoClient.send(command);
       alert("Todo added successfully!");
       setTodo("");
+      fetchTodos(); // Refresh the list
     } catch (err) {
       alert("Error: " + (err as Error).message);
       console.error(err);
@@ -124,6 +188,27 @@ export default function TodoApp() {
               onChange={(e: ChangeEvent<HTMLInputElement>) => setTodo(e.target.value)}
             />
             <button onClick={submitTodo}>Submit</button>
+
+            <hr style={{ margin: "20px 0" }} />
+
+            <h2>Todo List</h2>
+            {todos.length > 0 ? (
+              <ul style={{ listStyle: "none", padding: 0 }}>
+                {todos.map((item) => (
+                  <li key={item.todoId} style={{ textDecoration: item.completed ? "line-through" : "none" }}>
+                    <input
+                      type="checkbox"
+                      checked={item.completed}
+                      onChange={() => handleToggleComplete(item.todoId, item.completed)}
+                      style={{ marginRight: 10 }}
+                    />
+                    {item.content}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>You have no tasks yet.</p>
+            )}
           </>
         )}
       </div>
